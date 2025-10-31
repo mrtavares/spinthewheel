@@ -1,0 +1,5 @@
+{
+  "name": "Spin the Wheel",
+  "description": "A visually appealing, interactive spinning wheel application built with React and Tailwind CSS. Click the button to spin the wheel and see which word is selected.",
+  "requestFramePermissions": []
+}
