@@ -1,27 +1,32 @@
 import React, { useMemo } from 'react';
-import { WHEEL_WORDS, WHEEL_COLORS } from '../constants';
+import { WHEEL_COLORS } from '../constants';
 import SpinButton from './SpinButton';
 
 interface WheelProps {
   rotation: number;
   onSpin: () => void;
   isSpinning: boolean;
+  words: string[];
 }
 
-const Wheel: React.FC<WheelProps> = ({ rotation, onSpin, isSpinning }) => {
-  const segmentAngle = 360 / WHEEL_WORDS.length;
+const Wheel: React.FC<WheelProps> = ({ rotation, onSpin, isSpinning, words }) => {
+  const segmentAngle = words.length > 0 ? 360 / words.length : 0;
 
   const conicGradientStyle = useMemo(() => {
-    const gradientParts = WHEEL_WORDS.map((_, i) => {
+    if (words.length === 0) {
+      return { background: '#4b5563' }; // gray-600
+    }
+    const gradientParts = words.map((_, i) => {
       const startAngle = i * segmentAngle;
       const endAngle = (i + 1) * segmentAngle;
       const color = WHEEL_COLORS[i % WHEEL_COLORS.length];
       return `${color} ${startAngle}deg ${endAngle}deg`;
     });
     return {
+      // Offset the gradient so the words appear in the middle of each color segment
       background: `conic-gradient(from -${segmentAngle / 2}deg, ${gradientParts.join(', ')})`,
     };
-  }, [segmentAngle]);
+  }, [segmentAngle, words]);
 
   return (
     <div className="relative w-full aspect-square rounded-full shadow-2xl">
@@ -37,27 +42,13 @@ const Wheel: React.FC<WheelProps> = ({ rotation, onSpin, isSpinning }) => {
           >
             <div className="absolute inset-0" style={conicGradientStyle} />
             
-            {/* Segment Lines */}
-            {WHEEL_WORDS.map((_, i) => {
-              const angle = i * segmentAngle;
-              return (
-                <div
-                  key={`line-${i}`}
-                  className="absolute w-full h-full"
-                  style={{ transform: `rotate(${angle}deg)` }}
-                >
-                  <div className="absolute top-1/2 left-1/2 w-1/2 h-px bg-white/20 origin-left" />
-                </div>
-              );
-            })}
-
             {/* Words */}
-            {WHEEL_WORDS.map((word, i) => {
+            {words.map((word, i) => {
               const angle = i * segmentAngle;
               return (
                 <div
-                  key={i}
-                  className="absolute w-full h-full flex justify-center"
+                  key={`word-${word}`} // Use the word for a stable key
+                  className="absolute w-full h-full flex justify-center transition-transform duration-300 ease-in-out"
                   style={{ transform: `rotate(${angle}deg)` }}
                 >
                   <span

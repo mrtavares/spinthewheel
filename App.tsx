@@ -1,3 +1,4 @@
+
 import React, { useState, useCallback, useEffect, useRef } from 'react';
 import Wheel from './components/Wheel';
 import { WHEEL_WORDS, WHEEL_VERBS_PAST_SIMPLE } from './constants';
@@ -14,9 +15,10 @@ interface VerbQuizModalProps {
   onClose: () => void;
   onCorrect: () => void;
   onIncorrect: () => void;
+  onRemoveWord: (word: string) => void;
 }
 
-const VerbQuizModal = ({ verb, onClose, onCorrect, onIncorrect }: VerbQuizModalProps) => {
+const VerbQuizModal = ({ verb, onClose, onCorrect, onIncorrect, onRemoveWord }: VerbQuizModalProps) => {
   const [userInput, setUserInput] = useState('');
   const [feedback, setFeedback] = useState<string | null>(null);
   const [isCorrect, setIsCorrect] = useState(false);
@@ -86,12 +88,27 @@ const VerbQuizModal = ({ verb, onClose, onCorrect, onIncorrect }: VerbQuizModalP
             Check
           </button>
         ) : (
-          <button 
-            onClick={onClose}
-            className="bg-blue-600 text-white font-bold py-3 px-8 rounded-md hover:bg-blue-500 focus:outline-none focus:ring-4 focus:ring-blue-400/50 transition-all duration-300 w-full text-lg"
-          >
-            Continue
-          </button>
+          <div className="mt-5 flex flex-col sm:flex-row gap-3">
+             <button 
+                onClick={onClose}
+                className="bg-blue-600 text-white font-bold py-3 px-6 rounded-md hover:bg-blue-500 focus:outline-none focus:ring-4 focus:ring-blue-400/50 transition-all duration-300 w-full text-lg"
+              >
+                Continue
+              </button>
+              {isCorrect && (
+                <button
+                  onClick={() => {
+                      if (verb) {
+                        onRemoveWord(verb);
+                      }
+                      onClose();
+                  }}
+                  className="bg-rose-600/90 text-white font-bold py-3 px-6 rounded-md hover:bg-rose-600 focus:outline-none focus:ring-4 focus:ring-rose-400/50 transition-all duration-300 w-full text-lg"
+                >
+                  Remove Word
+                </button>
+              )}
+          </div>
         )}
 
         {feedback && (
@@ -106,6 +123,7 @@ const VerbQuizModal = ({ verb, onClose, onCorrect, onIncorrect }: VerbQuizModalP
 
 
 export default function App() {
+  const [words, setWords] = useState(WHEEL_WORDS);
   const [rotation, setRotation] = useState(0);
   const [isSpinning, setIsSpinning] = useState(false);
   const [selectedWord, setSelectedWord] = useState<string | null>(null);
@@ -119,19 +137,30 @@ export default function App() {
     animationFrameId: null as number | null,
   });
 
+  const handleRemoveWord = useCallback((wordToRemove: string) => {
+    setWords(currentWords => currentWords.filter(w => w !== wordToRemove));
+  }, []);
+
   const handleSpin = useCallback(() => {
-    if (isSpinning) return;
+    if (isSpinning || words.length === 0) return;
 
     setSelectedWord(null);
 
-    const totalItems = WHEEL_WORDS.length;
+    const totalItems = words.length;
     const randomItemIndex = Math.floor(Math.random() * totalItems);
     const degreesPerItem = 360 / totalItems;
     
-    const targetAngle = 270 - (randomItemIndex * degreesPerItem);
+    // Add a random "jitter" to the final position to make it feel more natural.
+    // This will stop the pointer somewhere within the middle 80% of the segment.
+    const randomJitter = (Math.random() - 0.5) * (degreesPerItem * 0.8);
+
+    // Align the pointer (at 270 degrees) with the selected segment's center, including the jitter
+    const targetAngle = 270 - (randomItemIndex * degreesPerItem) - randomJitter;
     const fullSpins = 6 + Math.floor(Math.random() * 4);
     
-    const newTargetRotation = (Math.floor(rotation / 360) * 360) + (fullSpins * 360) + targetAngle;
+    // Ensure rotation continues from where it left off
+    const currentRevolution = Math.floor(rotation / 360);
+    const newTargetRotation = (currentRevolution * 360) + (fullSpins * 360) + targetAngle;
 
     animationState.current = {
       ...animationState.current,
@@ -142,7 +171,7 @@ export default function App() {
     };
     
     setIsSpinning(true);
-  }, [isSpinning, rotation]);
+  }, [isSpinning, rotation, words]);
 
   useEffect(() => {
     if (!isSpinning) {
@@ -154,11 +183,11 @@ export default function App() {
     }
 
     const duration = 6000;
-    const segmentAngle = 360 / WHEEL_WORDS.length;
+    const segmentAngle = 360 / words.length;
     
     const { startRotation, targetRotation, startTime, randomItemIndex } = animationState.current;
     
-    const lastTickSegment = { current: Math.floor(startRotation / segmentAngle) };
+    const lastTickRotation = { current: startRotation };
 
     const easeOutQuart = (t: number) => 1 - Math.pow(1 - t, 4);
 
@@ -170,35 +199,34 @@ export default function App() {
       const currentRotationValue = startRotation + (targetRotation - startRotation) * easedProgress;
       setRotation(currentRotationValue);
 
-      const currentSegment = Math.floor(currentRotationValue / segmentAngle);
-      if (currentSegment > lastTickSegment.current) {
+      while (currentRotationValue >= lastTickRotation.current + segmentAngle) {
         playTick();
-        lastTickSegment.current = currentSegment;
+        lastTickRotation.current += segmentAngle;
       }
 
       if (progress < 1) {
         animationState.current.animationFrameId = requestAnimationFrame(animate);
       } else {
-        setRotation(targetRotation);
+        setRotation(targetRotation % 360);
         setIsSpinning(false);
-        setSelectedWord(WHEEL_WORDS[randomItemIndex]);
+        setSelectedWord(words[randomItemIndex]);
         animationState.current.animationFrameId = null;
       }
     };
 
-    animate();
+    animationState.current.animationFrameId = requestAnimationFrame(animate);
 
     return () => {
       if (animationState.current.animationFrameId) {
         cancelAnimationFrame(animationState.current.animationFrameId);
       }
     };
-  }, [isSpinning, playTick]);
+  }, [isSpinning, playTick, words]);
 
 
   useEffect(() => {
     const handleKeyDown = (event: KeyboardEvent) => {
-      if (event.ctrlKey && event.key === 'Enter') {
+      if (event.ctrlKey && event.key === 'Enter' && !selectedWord) {
         event.preventDefault();
         handleSpin();
       }
@@ -209,7 +237,7 @@ export default function App() {
     return () => {
       window.removeEventListener('keydown', handleKeyDown);
     };
-  }, [handleSpin]);
+  }, [handleSpin, selectedWord]);
 
   return (
     <div className="min-h-screen flex flex-col items-center justify-center p-4 overflow-hidden">
@@ -217,14 +245,27 @@ export default function App() {
         <div className="absolute top-1/2 left-0 z-20 -translate-y-1/2 -translate-x-1/2">
             <PointerIcon />
         </div>
-        <Wheel rotation={rotation} onSpin={handleSpin} isSpinning={isSpinning} />
+        <Wheel 
+          rotation={rotation} 
+          onSpin={handleSpin} 
+          isSpinning={isSpinning || words.length === 0}
+          words={words}
+        />
       </div>
+
+      {words.length === 0 && (
+        <div className="mt-8 text-center text-white bg-gray-800/50 backdrop-blur-sm rounded-lg p-4">
+          <h2 className="text-2xl font-bold">All words learned!</h2>
+          <p className="text-gray-300">Refresh the page to start over.</p>
+        </div>
+      )}
 
       <VerbQuizModal 
         verb={selectedWord} 
         onClose={() => setSelectedWord(null)}
         onCorrect={playCorrectSound}
         onIncorrect={playIncorrectSound}
+        onRemoveWord={handleRemoveWord}
       />
     </div>
   );
