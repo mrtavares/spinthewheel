@@ -30,10 +30,9 @@ const Wheel: React.FC<WheelProps> = ({ rotation, onSpin, isSpinning }) => {
         {/* Inner shadow */}
         <div className="relative w-full h-full rounded-full bg-gray-800 shadow-inner">
           <div
-            className="w-full h-full rounded-full overflow-hidden transition-transform duration-[6000ms]"
+            className="w-full h-full rounded-full overflow-hidden"
             style={{
               transform: `rotate(${rotation}deg)`,
-              transitionTimingFunction: 'cubic-bezier(0.1, 0.5, 0.2, 1)',
             }}
           >
             <div className="absolute inset-0" style={conicGradientStyle} />

@@ -1,6 +1,7 @@
-import React, { useState, useCallback, useEffect } from 'react';
+import React, { useState, useCallback, useEffect, useRef } from 'react';
 import Wheel from './components/Wheel';
 import { WHEEL_WORDS, WHEEL_VERBS_PAST_SIMPLE } from './constants';
+import { useTickSound } from './hooks/useTickSound';
 
 const PointerIcon = () => (
     <svg width="50" height="40" viewBox="0 0 48 38" fill="none" xmlns="http://www.w3.org/2000/svg" className="drop-shadow-lg">
@@ -8,16 +9,27 @@ const PointerIcon = () => (
     </svg>
 );
 
-const VerbQuizModal = ({ verb, onClose }: { verb: string | null; onClose: () => void; }) => {
+interface VerbQuizModalProps {
+  verb: string | null;
+  onClose: () => void;
+  onCorrect: () => void;
+  onIncorrect: () => void;
+}
+
+const VerbQuizModal = ({ verb, onClose, onCorrect, onIncorrect }: VerbQuizModalProps) => {
   const [userInput, setUserInput] = useState('');
   const [feedback, setFeedback] = useState<string | null>(null);
   const [isCorrect, setIsCorrect] = useState(false);
+  const inputRef = useRef<HTMLInputElement>(null);
 
   useEffect(() => {
     if (verb) {
       setUserInput('');
       setFeedback(null);
       setIsCorrect(false);
+      // Ensure the input is focused after the modal is visible and state is reset.
+      // A small timeout helps guarantee the element is ready.
+      setTimeout(() => inputRef.current?.focus(), 50);
     }
   }, [verb]);
 
@@ -32,8 +44,10 @@ const VerbQuizModal = ({ verb, onClose }: { verb: string | null; onClose: () => 
     setIsCorrect(userIsCorrect);
     if (userIsCorrect) {
       setFeedback(`Correct! "${verb.toUpperCase()}" in past simple is "${correctAnswer}"`);
+      onCorrect();
     } else {
       setFeedback(`Not quite. "${verb.toUpperCase()}" in past simple is "${correctAnswer}"`);
+      onIncorrect();
     }
   };
 
@@ -53,6 +67,7 @@ const VerbQuizModal = ({ verb, onClose }: { verb: string | null; onClose: () => 
         <h2 className="text-4xl sm:text-5xl font-bold uppercase mb-4 tracking-widest">{verb}</h2>
         
         <input 
+          ref={inputRef}
           type="text"
           value={userInput}
           onChange={(e) => setUserInput(e.target.value)}
@@ -94,34 +109,92 @@ export default function App() {
   const [rotation, setRotation] = useState(0);
   const [isSpinning, setIsSpinning] = useState(false);
   const [selectedWord, setSelectedWord] = useState<string | null>(null);
+  const { playTick, playCorrectSound, playIncorrectSound } = useTickSound();
+
+  const animationState = useRef({
+    startRotation: 0,
+    targetRotation: 0,
+    startTime: 0,
+    randomItemIndex: 0,
+    animationFrameId: null as number | null,
+  });
 
   const handleSpin = useCallback(() => {
     if (isSpinning) return;
 
-    setIsSpinning(true);
     setSelectedWord(null);
 
     const totalItems = WHEEL_WORDS.length;
     const randomItemIndex = Math.floor(Math.random() * totalItems);
     const degreesPerItem = 360 / totalItems;
     
-    // Calculate the final rotation angle for the wheel.
-    // The pointer is at 180 degrees (9 o'clock).
-    // Each word is initially positioned at an angle of `(index * degreesPerItem) - 90` degrees
-    // due to CSS positioning ('top-*' places it at 12 o'clock, which is -90 degrees).
-    // We solve for `targetAngle`: `targetAngle + (initialAngle) = 180`, which simplifies to the calculation below.
     const targetAngle = 270 - (randomItemIndex * degreesPerItem);
-
     const fullSpins = 6 + Math.floor(Math.random() * 4);
-    const newRotation = (Math.floor(rotation / 360) * 360) + (fullSpins * 360) + targetAngle;
     
-    setRotation(newRotation);
+    const newTargetRotation = (Math.floor(rotation / 360) * 360) + (fullSpins * 360) + targetAngle;
 
-    setTimeout(() => {
-      setIsSpinning(false);
-      setSelectedWord(WHEEL_WORDS[randomItemIndex]);
-    }, 6000); 
+    animationState.current = {
+      ...animationState.current,
+      startRotation: rotation,
+      targetRotation: newTargetRotation,
+      startTime: Date.now(),
+      randomItemIndex: randomItemIndex,
+    };
+    
+    setIsSpinning(true);
   }, [isSpinning, rotation]);
+
+  useEffect(() => {
+    if (!isSpinning) {
+      if (animationState.current.animationFrameId) {
+        cancelAnimationFrame(animationState.current.animationFrameId);
+        animationState.current.animationFrameId = null;
+      }
+      return;
+    }
+
+    const duration = 6000;
+    const segmentAngle = 360 / WHEEL_WORDS.length;
+    
+    const { startRotation, targetRotation, startTime, randomItemIndex } = animationState.current;
+    
+    const lastTickSegment = { current: Math.floor(startRotation / segmentAngle) };
+
+    const easeOutQuart = (t: number) => 1 - Math.pow(1 - t, 4);
+
+    const animate = () => {
+      const elapsed = Date.now() - startTime;
+      const progress = Math.min(elapsed / duration, 1);
+      const easedProgress = easeOutQuart(progress);
+
+      const currentRotationValue = startRotation + (targetRotation - startRotation) * easedProgress;
+      setRotation(currentRotationValue);
+
+      const currentSegment = Math.floor(currentRotationValue / segmentAngle);
+      if (currentSegment > lastTickSegment.current) {
+        playTick();
+        lastTickSegment.current = currentSegment;
+      }
+
+      if (progress < 1) {
+        animationState.current.animationFrameId = requestAnimationFrame(animate);
+      } else {
+        setRotation(targetRotation);
+        setIsSpinning(false);
+        setSelectedWord(WHEEL_WORDS[randomItemIndex]);
+        animationState.current.animationFrameId = null;
+      }
+    };
+
+    animate();
+
+    return () => {
+      if (animationState.current.animationFrameId) {
+        cancelAnimationFrame(animationState.current.animationFrameId);
+      }
+    };
+  }, [isSpinning, playTick]);
+
 
   useEffect(() => {
     const handleKeyDown = (event: KeyboardEvent) => {
@@ -147,7 +220,12 @@ export default function App() {
         <Wheel rotation={rotation} onSpin={handleSpin} isSpinning={isSpinning} />
       </div>
 
-      <VerbQuizModal verb={selectedWord} onClose={() => setSelectedWord(null)} />
+      <VerbQuizModal 
+        verb={selectedWord} 
+        onClose={() => setSelectedWord(null)}
+        onCorrect={playCorrectSound}
+        onIncorrect={playIncorrectSound}
+      />
     </div>
   );
 }
